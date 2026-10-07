@@ -18,8 +18,16 @@ async function getToken() {
     headers: {"Content-Type":"application/x-www-form-urlencoded"},
     body: new URLSearchParams({grant_type:"client_credentials",client_id:CLIENT_ID,client_secret:CLIENT_SECRET})
   });
-  const j = await r.json();
-  if (!r.ok || !j.access_token) throw new Error("Shopify auth failed: HTTP " + r.status);
+  const contentType = r.headers.get("content-type") || "";
+  const raw = await r.text();
+  let j = {};
+  if (contentType.includes("application/json")) {
+    try { j = JSON.parse(raw); } catch {}
+  }
+  if (!r.ok || !j.access_token) {
+    const safe = raw.replace(/<[^>]*>/g, " ").replace(/\\s+/g, " ").trim().slice(0, 240);
+    throw new Error("Shopify auth failed: HTTP " + r.status + "; type=" + contentType + "; url=" + r.url + "; body=" + safe);
+  }
   tokenCache = {value:j.access_token, expiresAt:Date.now() + Math.max(60, Number(j.expires_in || 3600)-60)*1000};
   return tokenCache.value;
 }
