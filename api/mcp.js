@@ -3,19 +3,37 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { z } from "zod";
 
 const SHOP = process.env.SHOPIFY_SHOP;
-const TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
+const CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
+const CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
+let tokenCache = { value: null, expiresAt: 0 };
 const API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-10";
 const MCP_KEY = process.env.MCP_API_KEY;
 
+async function getToken() {
+  if (tokenCache.value && Date.now() < tokenCache.expiresAt) return tokenCache.value;
+  if (!SHOP || !CLIENT_ID || !CLIENT_SECRET) throw new Error("Missing SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, or SHOPIFY_CLIENT_SECRET");
+  const host = SHOP.includes(".") ? SHOP : SHOP + ".myshopify.com";
+  const r = await fetch("https://" + host + "/admin/oauth/access_token", {
+    method: "POST",
+    headers: {"Content-Type":"application/x-www-form-urlencoded"},
+    body: new URLSearchParams({grant_type:"client_credentials",client_id:CLIENT_ID,client_secret:CLIENT_SECRET})
+  });
+  const j = await r.json();
+  if (!r.ok || !j.access_token) throw new Error("Shopify auth failed: HTTP " + r.status);
+  tokenCache = {value:j.access_token, expiresAt:Date.now() + Math.max(60, Number(j.expires_in || 3600)-60)*1000};
+  return tokenCache.value;
+}
+
 async function gql(query, variables={}) {
-  if (!SHOP || !TOKEN) throw new Error("Shopify environment variables are not configured");
-  const r = await fetch(`https://${SHOP}/admin/api/${API_VERSION}/graphql.json`, {
+  const token = await getToken();
+  const host = SHOP.includes(".") ? SHOP : SHOP + ".myshopify.com";
+  const r = await fetch("https://" + host + "/admin/api/" + API_VERSION + "/graphql.json", {
     method:"POST",
-    headers:{"Content-Type":"application/json","X-Shopify-Access-Token":TOKEN},
+    headers:{"Content-Type":"application/json","X-Shopify-Access-Token":token},
     body:JSON.stringify({query,variables})
   });
   const j=await r.json();
-  if(!r.ok || j.errors) throw new Error(JSON.stringify(j.errors || j));
+  if(!r.ok || j.errors) throw new Error("Shopify GraphQL failed: HTTP " + r.status + " " + JSON.stringify(j.errors || {}));
   return j.data;
 }
 const out=(x)=>({content:[{type:"text",text:JSON.stringify(x,null,2)}]});
