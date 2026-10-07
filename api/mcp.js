@@ -21,7 +21,7 @@ async function gql(query, variables={}) {
 const out=(x)=>({content:[{type:"text",text:JSON.stringify(x,null,2)}]});
 
 function makeServer(){
- const s=new McpServer({name:"skinpara-admin-mcp",version:"1.0.0"});
+ const s=new McpServer({name:"skinpara-admin-mcp",version:"1.0.1"});
 
  s.tool("get_product","Read one Shopify product by GID",{id:z.string()},async({id})=>out(await gql(`query($id:ID!){product(id:$id){id title handle descriptionHtml productType tags category{id name fullName} seo{title description} status vendor}}`,{id})));
 
