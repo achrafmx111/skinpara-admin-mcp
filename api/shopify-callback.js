@@ -1,7 +1,7 @@
 import crypto from "crypto";
 
 const CLIENT_ID = process.env.SHOPIFY_CLIENT_ID;
-const CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;
+const CLIENT_SECRET = process.env.SHOPIFY_CLIENT_SECRET;\nconst SUPABASE_URL = process.env.SUPABASE_URL;\nconst SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 
 function parseCookies(req){
   return Object.fromEntries((req.headers.cookie || "").split(";").map(v=>v.trim().split("=")).filter(x=>x.length===2));
