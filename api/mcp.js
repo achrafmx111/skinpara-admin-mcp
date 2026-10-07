@@ -11,82 +11,14 @@ const MCP_KEY = process.env.MCP_API_KEY;
 
 async function getToken() {
   if (tokenCache.value && Date.now() < tokenCache.expiresAt) return tokenCache.value;
-  if (!SHOP || !CLIENT_ID || !CLIENT_SECRET) throw new Error("Missing SHOPIFY_SHOP, SHOPIFY_CLIENT_ID, or SHOPIFY_CLIENT_SECRET");
+  if (!SHOP || !SUPABASE_URL || !SUPABASE_SECRET_KEY) throw new Error("Shopify OAuth token storage is not configured");
   const host = SHOP.includes(".") ? SHOP : SHOP + ".myshopify.com";
-  const r = await fetch("https://" + host + "/admin/oauth/access_token", {
-    method: "POST",
-    headers: {"Content-Type":"application/x-www-form-urlencoded"},
-    body: new URLSearchParams({grant_type:"client_credentials",client_id:CLIENT_ID,client_secret:CLIENT_SECRET})
+  const r = await fetch(SUPABASE_URL + "/rest/v1/shopify_oauth_tokens?shop=eq." + encodeURIComponent(host) + "&select=access_token&limit=1", {
+    headers: {"apikey":SUPABASE_SECRET_KEY,"Authorization":"Bearer "+SUPABASE_SECRET_KEY}
   });
-  const contentType = r.headers.get("content-type") || "";
-  const raw = await r.text();
-  let j = {};
-  if (contentType.includes("application/json")) {
-    try { j = JSON.parse(raw); } catch {}
-  }
-  if (!r.ok || !j.access_token) {
-    const safe = raw.replace(/<[^>]*>/g, " ").replace(/\\s+/g, " ").trim().slice(0, 240);
-    throw new Error("Shopify auth failed: HTTP " + r.status + "; type=" + contentType + "; url=" + r.url + "; body=" + safe);
-  }
-  tokenCache = {value:j.access_token, expiresAt:Date.now() + Math.max(60, Number(j.expires_in || 3600)-60)*1000};
+  if(!r.ok) throw new Error("Secure Shopify token lookup failed: HTTP " + r.status);
+  const rows=await r.json();
+  if(!rows?.[0]?.access_token) throw new Error("No stored Shopify OAuth token. Authorize the app first.");
+  tokenCache={value:rows[0].access_token,expiresAt:Date.now()+5*60*1000};
   return tokenCache.value;
-}
-
-async function gql(query, variables={}) {
-  const token = await getToken();
-  const host = SHOP.includes(".") ? SHOP : SHOP + ".myshopify.com";
-  const r = await fetch("https://" + host + "/admin/api/" + API_VERSION + "/graphql.json", {
-    method:"POST",
-    headers:{"Content-Type":"application/json","X-Shopify-Access-Token":token},
-    body:JSON.stringify({query,variables})
-  });
-  const j=await r.json();
-  if(!r.ok || j.errors) throw new Error("Shopify GraphQL failed: HTTP " + r.status + " " + JSON.stringify(j.errors || {}));
-  return j.data;
-}
-const out=(x)=>({content:[{type:"text",text:JSON.stringify(x,null,2)}]});
-
-function makeServer(){
- const s=new McpServer({name:"skinpara-admin-mcp",version:"1.0.1"});
-
- s.tool("get_product","Read one Shopify product by GID",{id:z.string()},async({id})=>out(await gql(`query($id:ID!){product(id:$id){id title handle descriptionHtml productType tags category{id name fullName} seo{title description} status vendor}}`,{id})));
-
- s.tool("search_products","Search products using Shopify query syntax",{query:z.string(),first:z.number().int().min(1).max(50).default(20)},async({query,first})=>out(await gql(`query($q:String!,$n:Int!){products(first:$n,query:$q){nodes{id title handle status vendor productType tags category{id name fullName} seo{title description}}}}`,{q:query,n:first})));
-
- s.tool("update_product","Update safe product SEO/catalog fields. Omitted fields stay unchanged",{
-   id:z.string(),title:z.string().optional(),descriptionHtml:z.string().optional(),productType:z.string().optional(),
-   tags:z.array(z.string()).optional(),categoryId:z.string().optional(),seoTitle:z.string().optional(),seoDescription:z.string().optional()
- },async(a)=>{
-   const product={id:a.id};
-   for(const k of ["title","descriptionHtml","productType","tags"]) if(a[k]!==undefined) product[k]=a[k];
-   if(a.categoryId!==undefined) product.category=a.categoryId;
-   if(a.seoTitle!==undefined || a.seoDescription!==undefined) product.seo={...(a.seoTitle!==undefined?{title:a.seoTitle}:{}),...(a.seoDescription!==undefined?{description:a.seoDescription}:{})};
-   const d=await gql(`mutation($product:ProductUpdateInput!){productUpdate(product:$product){product{id title handle productType tags category{id name fullName} seo{title description}} userErrors{field message}}}`,{product});
-   return out(d.productUpdate);
- });
-
- s.tool("taxonomy_categories","Search Shopify taxonomy categories",{search:z.string(),first:z.number().int().min(1).max(50).default(20)},async({search,first})=>out(await gql(`query($s:String!,$n:Int!){taxonomy{categories(first:$n,search:$s){nodes{id name fullName isLeaf isRoot}}}}`,{s:search,n:first})));
-
- return s;
-}
-
-export default async function handler(req,res){
- if(req.method!=="POST"){
-  res.statusCode=200;res.setHeader("content-type","application/json");
-  if(req.query?.test==="shopify"){
-    try{
-      const d=await gql(`query { shop { name myshopifyDomain } }`);
-      return res.end(JSON.stringify({ok:true,shopify:true,shop:d.shop}));
-    }catch(e){
-      res.statusCode=500;
-      return res.end(JSON.stringify({ok:false,shopify:false,error:String(e.message||e)}));
-    }
-  }
-  return res.end(JSON.stringify({ok:true,name:"skinpara-admin-mcp"}));
-}
- if(MCP_KEY && req.headers.authorization!==`Bearer ${MCP_KEY}`){res.statusCode=401;return res.end("Unauthorized");}
- const server=makeServer();
- const transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined});
- await server.connect(transport);
- await transport.handleRequest(req,res,req.body);
 }
