@@ -45,7 +45,19 @@ function makeServer(){
 }
 
 export default async function handler(req,res){
- if(req.method!=="POST"){res.statusCode=200;res.setHeader("content-type","application/json");return res.end(JSON.stringify({ok:true,name:"skinpara-admin-mcp"}));}
+ if(req.method!=="POST"){
+  res.statusCode=200;res.setHeader("content-type","application/json");
+  if(req.query?.test==="shopify"){
+    try{
+      const d=await gql(`query { shop { name myshopifyDomain } }`);
+      return res.end(JSON.stringify({ok:true,shopify:true,shop:d.shop}));
+    }catch(e){
+      res.statusCode=500;
+      return res.end(JSON.stringify({ok:false,shopify:false,error:String(e.message||e)}));
+    }
+  }
+  return res.end(JSON.stringify({ok:true,name:"skinpara-admin-mcp"}));
+}
  if(MCP_KEY && req.headers.authorization!==`Bearer ${MCP_KEY}`){res.statusCode=401;return res.end("Unauthorized");}
  const server=makeServer();
  const transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined});
