@@ -1,0 +1,2 @@
+const BASE="https://skinpara-admin-mcp.vercel.app";
+export default function handler(req,res){res.setHeader("Cache-Control","no-store");return res.status(200).json({issuer:BASE,authorization_endpoint:BASE+"/api/oauth/authorize",token_endpoint:BASE+"/api/oauth/token",registration_endpoint:BASE+"/api/oauth/register",response_types_supported:["code"],grant_types_supported:["authorization_code"],code_challenge_methods_supported:["S256"],token_endpoint_auth_methods_supported:["none"],scopes_supported:["products.read"]});}
