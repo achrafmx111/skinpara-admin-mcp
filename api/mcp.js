@@ -38,7 +38,7 @@ async function gql(query, variables = {}) {
 }
 
 function makeServer() {
-  const server = new McpServer({ name: "skinpara-admin-mcp", version: "1.3.1" });
+  const server = new McpServer({ name: "skinpara-admin-mcp", version: "1.3.2" });
 
   server.tool("get_product", "Detailed read-only Shopify product lookup by GID. Never modifies Shopify.", { id: z.string() }, async ({ id }) => {
     const data = await gql(`query($id:ID!){product(id:$id){
@@ -125,7 +125,7 @@ async function oauthAuthorized(header) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(200).json({ ok: true, name: "skinpara-admin-mcp", version: "1.3.1", mode: "read-only-with-preview-and-taxonomy" });
+  if (req.method !== "POST") return res.status(200).json({ ok: true, name: "skinpara-admin-mcp", version: "1.3.2", mode: "read-only-with-preview-and-taxonomy" });
   const legacy = !!MCP_KEY && req.headers.authorization === "Bearer " + MCP_KEY;
   const oauth = legacy ? false : await oauthAuthorized(req.headers.authorization);
   if (!legacy && !oauth) {
@@ -133,7 +133,10 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   const server = makeServer();
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true
+  });
   await server.connect(transport);
   await transport.handleRequest(req, res, req.body);
 }
