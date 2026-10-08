@@ -38,7 +38,7 @@ async function gql(query, variables = {}) {
 }
 
 function makeServer() {
-  const server = new McpServer({ name: "skinpara-admin-mcp", version: "1.1.0" });
+  const server = new McpServer({ name: "skinpara-admin-mcp", version: "1.2.0" });
 
   server.tool("get_product", "Detailed read-only Shopify product lookup by GID. Never modifies Shopify.", { id: z.string() }, async ({ id }) => {
     const data = await gql(`query($id:ID!){product(id:$id){
@@ -51,6 +51,39 @@ function makeServer() {
       variants(first:20){nodes{id title sku barcode price compareAtPrice inventoryQuantity taxable}}
     }}`, { id });
     return { content: [{ type: "text", text: JSON.stringify(data.product, null, 2) }] };
+  });
+
+  server.tool("preview_product_update", "PREVIEW ONLY. Reads current Shopify product values and shows proposed before/after changes. Never modifies Shopify.", {
+    id: z.string(),
+    title: z.string().optional(),
+    descriptionHtml: z.string().optional(),
+    productType: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    seoTitle: z.string().optional(),
+    seoDescription: z.string().optional(),
+    categoryId: z.string().nullable().optional()
+  }, async ({ id, title, descriptionHtml, productType, tags, seoTitle, seoDescription, categoryId }) => {
+    const data = await gql(`query($id:ID!){product(id:$id){id title descriptionHtml productType tags seo{title description} category{id name fullName}}}`, { id });
+    if (!data.product) throw new Error("Product not found");
+    const before = data.product;
+    const proposed = {};
+    if (title !== undefined) proposed.title = title;
+    if (descriptionHtml !== undefined) proposed.descriptionHtml = descriptionHtml;
+    if (productType !== undefined) proposed.productType = productType;
+    if (tags !== undefined) proposed.tags = tags;
+    if (seoTitle !== undefined || seoDescription !== undefined) proposed.seo = {
+      title: seoTitle !== undefined ? seoTitle : before.seo?.title ?? null,
+      description: seoDescription !== undefined ? seoDescription : before.seo?.description ?? null
+    };
+    if (categoryId !== undefined) proposed.categoryId = categoryId;
+    return { content: [{ type: "text", text: JSON.stringify({
+      mode: "PREVIEW_ONLY",
+      shopify_modified: false,
+      productId: id,
+      before,
+      proposed,
+      warning: "No Shopify mutation was executed. Explicit user confirmation is required before any future write tool may be used."
+    }, null, 2) }] };
   });
 
   server.tool("search_products", "Read-only Shopify product search. Never modifies Shopify.", {
@@ -84,7 +117,7 @@ async function oauthAuthorized(header) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(200).json({ ok: true, name: "skinpara-admin-mcp", version: "1.1.0", mode: "read-only" });
+  if (req.method !== "POST") return res.status(200).json({ ok: true, name: "skinpara-admin-mcp", version: "1.2.0", mode: "read-only-with-preview" });
   const legacy = !!MCP_KEY && req.headers.authorization === "Bearer " + MCP_KEY;
   const oauth = legacy ? false : await oauthAuthorized(req.headers.authorization);
   if (!legacy && !oauth) {
