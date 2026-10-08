@@ -38,7 +38,7 @@ async function gql(query, variables = {}) {
 }
 
 function makeServer() {
-  const server = new McpServer({ name: "skinpara-admin-mcp", version: "1.2.0" });
+  const server = new McpServer({ name: "skinpara-admin-mcp", version: "1.3.0" });
 
   server.tool("get_product", "Detailed read-only Shopify product lookup by GID. Never modifies Shopify.", { id: z.string() }, async ({ id }) => {
     const data = await gql(`query($id:ID!){product(id:$id){
@@ -86,6 +86,14 @@ function makeServer() {
     }, null, 2) }] };
   });
 
+  server.tool("search_taxonomy_categories", "Read-only Shopify taxonomy category search. Never modifies Shopify.", {
+    search: z.string(),
+    first: z.number().int().min(1).max(50).default(20)
+  }, async ({ search, first }) => {
+    const data = await gql(`query($search:String!,$first:Int!){taxonomy{categories(first:$first,search:$search){nodes{id name fullName isLeaf isRoot}}}}`, { search, first });
+    return { content: [{ type: "text", text: JSON.stringify({ mode: "READ_ONLY", categories: data.taxonomy?.categories?.nodes || [] }, null, 2) }] };
+  });
+
   server.tool("search_products", "Read-only Shopify product search. Never modifies Shopify.", {
     query: z.string(),
     first: z.number().int().min(1).max(50).default(10)
@@ -117,7 +125,7 @@ async function oauthAuthorized(header) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(200).json({ ok: true, name: "skinpara-admin-mcp", version: "1.2.0", mode: "read-only-with-preview" });
+  if (req.method !== "POST") return res.status(200).json({ ok: true, name: "skinpara-admin-mcp", version: "1.3.0", mode: "read-only-with-preview-and-taxonomy" });
   const legacy = !!MCP_KEY && req.headers.authorization === "Bearer " + MCP_KEY;
   const oauth = legacy ? false : await oauthAuthorized(req.headers.authorization);
   if (!legacy && !oauth) {
