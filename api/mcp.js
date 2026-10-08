@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const SHOP = process.env.SHOPIFY_SHOP;
 const API_VERSION = process.env.SHOPIFY_API_VERSION || "2026-10";
-const MCP_KEY = process.env.MCP_API_KEY;
+const MCP_KEY = process.env.MCP_API_KEY;\nimport crypto from "node:crypto";
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 let tokenCache = { value: null, expiresAt: 0 };
@@ -49,9 +49,9 @@ function makeServer() {
   return server;
 }
 
-export default async function handler(req, res) {
+async function oauthAuthorized(header) {\n  if (!header?.startsWith("Bearer ") || !SUPABASE_URL || !SUPABASE_SECRET_KEY) return false;\n  const raw = header.slice(7);\n  const hash = crypto.createHash("sha256").update(raw).digest("hex");\n  const r = await fetch(SUPABASE_URL + "/rest/v1/mcp_oauth_tokens?token_hash=eq." + hash + "&select=scope,expires_at&limit=1", { headers: { apikey: SUPABASE_SECRET_KEY, Authorization: "Bearer " + SUPABASE_SECRET_KEY } });\n  if (!r.ok) return false; const rows = await r.json(); const t = rows?.[0];\n  return !!t && t.scope?.split(" ").includes("products.read") && new Date(t.expires_at) > new Date();\n}\n\nexport default async function handler(req, res) {
   if (req.method !== "POST") return res.status(200).json({ ok: true, name: "skinpara-admin-mcp" });
-  if (!MCP_KEY || req.headers.authorization !== "Bearer " + MCP_KEY) return res.status(401).json({ error: "Unauthorized" });
+  const legacy = !!MCP_KEY && req.headers.authorization === "Bearer " + MCP_KEY;\n  const oauth = legacy ? false : await oauthAuthorized(req.headers.authorization);\n  if (!legacy && !oauth) {\n    res.setHeader("WWW-Authenticate", 'Bearer resource_metadata="https://skinpara-admin-mcp.vercel.app/.well-known/oauth-protected-resource"');\n    return res.status(401).json({ error: "Unauthorized" });\n  }
   const server = makeServer();
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   await server.connect(transport);
