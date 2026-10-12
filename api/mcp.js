@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { startSeoBulk } from "./seo-bulk.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -37,7 +38,7 @@ async function gql(query, variables = {}) {
   return j.data;
 }
 
-function makeServer() {
+function makeServer(canWrite = false) {
   const server = new McpServer({ name: "skinpara-admin-mcp", version: "1.3.2" });
 
   server.tool("get_product", "Detailed read-only Shopify product lookup by GID. Never modifies Shopify.", { id: z.string() }, async ({ id }) => {
@@ -108,31 +109,44 @@ function makeServer() {
     return { content: [{ type: "text", text: JSON.stringify(data.products.nodes, null, 2) }] };
   });
 
+  if (canWrite) {
+    server.tool("bulk_update_product_seo", "Submit one bulk Shopify SEO-only mutation (up to 10000 products). Requires products.write OAuth scope. Never changes prices, inventory or publication.", {
+      rows: z.array(z.object({
+        id: z.string(),
+        seoTitle: z.string().min(1).max(255),
+        seoDescription: z.string().min(1).max(320)
+      })).min(1).max(10000)
+    }, async ({ rows }) => {
+      const result = await startSeoBulk({ gql, rows });
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    });
+  }
   return server;
 }
 
-async function oauthAuthorized(header) {
-  if (!header?.startsWith("Bearer ") || !SUPABASE_URL || !SUPABASE_SECRET_KEY) return false;
+async function oauthScopes(header) {
+  if (!header?.startsWith("Bearer ") || !SUPABASE_URL || !SUPABASE_SECRET_KEY) return [];
   const raw = header.slice(7);
   const hash = crypto.createHash("sha256").update(raw).digest("hex");
   const r = await fetch(SUPABASE_URL + "/rest/v1/mcp_oauth_tokens?token_hash=eq." + hash + "&select=scope,expires_at&limit=1", {
     headers: { apikey: SUPABASE_SECRET_KEY, Authorization: "Bearer " + SUPABASE_SECRET_KEY }
   });
-  if (!r.ok) return false;
+  if (!r.ok) return [];
   const rows = await r.json();
   const t = rows?.[0];
-  return !!t && t.scope?.split(" ").includes("products.read") && new Date(t.expires_at) > new Date();
+  return t && new Date(t.expires_at) > new Date() ? (t.scope || "").split(" ") : [];
 }
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(200).json({ ok: true, name: "skinpara-admin-mcp", version: "1.3.2", mode: "read-only-with-preview-and-taxonomy" });
   const legacy = !!MCP_KEY && req.headers.authorization === "Bearer " + MCP_KEY;
-  const oauth = legacy ? false : await oauthAuthorized(req.headers.authorization);
+  const scopes = legacy ? [] : await oauthScopes(req.headers.authorization);
+  const oauth = scopes.includes("products.read");
   if (!legacy && !oauth) {
     res.setHeader("WWW-Authenticate", 'Bearer resource_metadata="https://skinpara-admin-mcp.vercel.app/.well-known/oauth-protected-resource"');
     return res.status(401).json({ error: "Unauthorized" });
   }
-  const server = makeServer();
+  const server = makeServer(!legacy && scopes.includes("products.read") && scopes.includes("products.write"));
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true
