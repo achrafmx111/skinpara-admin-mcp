@@ -39,7 +39,7 @@ async function gql(query, variables = {}) {
 }
 
 function makeServer(canWrite = false) {
-  const server = new McpServer({ name: "skinpara-admin-mcp", version: "1.3.2" });
+  const server = new McpServer({ name: "skinpara-admin-mcp", version: "1.3.3" });
 
   server.tool("get_product", "Detailed read-only Shopify product lookup by GID. Never modifies Shopify.", { id: z.string() }, async ({ id }) => {
     const data = await gql(`query($id:ID!){product(id:$id){
@@ -138,7 +138,7 @@ async function oauthScopes(header) {
 }
 
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(200).json({ ok: true, name: "skinpara-admin-mcp", version: "1.3.2", mode: "read-only-with-preview-and-taxonomy" });
+  if (req.method !== "POST") return res.status(200).json({ ok: true, name: "skinpara-admin-mcp", version: "1.3.3", mode: "read-only-with-preview-and-taxonomy" });
   const legacy = !!MCP_KEY && req.headers.authorization === "Bearer " + MCP_KEY;
   const scopes = legacy ? [] : await oauthScopes(req.headers.authorization);
   const oauth = scopes.includes("products.read");
