@@ -11,6 +11,7 @@ export async function startSeoBulk({ gql, rows }) {
   });
   const jsonl = lines.join("\n") + "\n";
   const bytes = Buffer.byteLength(jsonl);
+  if (bytes > 18 * 1024 * 1024) throw new Error("Bulk payload exceeds 18 MB; use server-side generation or split upload");
   const staged = await gql(`mutation($input:[StagedUploadInput!]!){stagedUploadsCreate(input:$input){stagedTargets{url resourceUrl parameters{name value}}userErrors{field message}}}`, {
     input: [{ filename: "skinpara-product-seo.jsonl", mimeType: "text/jsonl", resource: "BULK_MUTATION_VARIABLES", httpMethod: "POST", fileSize: String(bytes) }]
   });
